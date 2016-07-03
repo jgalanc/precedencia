@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <meta name="description" content="Free Web tutorials">
+        <meta name="keywords" content="periodismo de datos,periodismo,datos,procedencia,España,diagrama,d3">
+        <meta name="author" content="CEPID, Jérémie Grienenberger">
+        <title>¿A qué lugar de España se marchó tu gente?</title>
+        <link type='text/css' rel='stylesheet' href='css/tabulous.css'>
+        <link type='text/css' rel='stylesheet' href='css/style.css'>
+        <link type='text/css' rel='stylesheet' href='http://fonts.googleapis.com/css?family=Fredericka+the+Great'>
+        <link type='image/png' rel='icon' href='favicon.png'>
+        <script type='text/javascript' src='lib/d3.js'></script>
+        <script type='text/javascript' src='lib/queue.js'></script><script type='text/javascript' src='lib/underscore.js'></script>
+        <script type='text/javascript' src='lib/jquery-2.1.1.js'></script>
+        <script type='text/javascript' src='js/mapper.js'></script>
+        <script type='text/javascript' src='js/tabulous.js'></script>
+
+        <script>		
+
+            $(document).ready(function ($) {
+                drawProcedencia();
+            });
+
+        </script>
+        
+        <script>
+   
+            function drawProcedencia(){
+                queue()
+                .defer(d3.json, 'data/procedencia-matrix.json')
+                .defer(d3.csv, 'data/procedencia-ciudades.csv')
+                .await(function(err, matrix, mmap) {
+                    if (err) console.log(err);
+                    _.each(mmap, function (d, i) { d.id=i; d.data=d.color })
+                    drawChordsProcedencia(matrix, mmap);
+                }); 
+            }
+
+            function drawChordsProcedencia (matrix, mmap) {
+
+                var height = window.screen.availHeight;
+                var width = window.screen.availWidth;
+
+                var w = width - (width/3), h = height - (height/5), r1 = h / 2, r0 = r1 - 110;
+
+                var chord = d3.layout.chord()
+                .padding(.02)
+                .sortSubgroups(d3.descending)
+                .sortChords(d3.descending);
+
+                var arc = d3.svg.arc()
+                .innerRadius(r0)
+                .outerRadius(r0 + 20);
+
+
+                var svg = d3.select("#graphic").append("svg:svg")
+                .attr("id", "procedencia")
+                .attr("width", w)
+                .attr("height", h)
+                .append("svg:g")
+                .attr("id", "circle")
+                .attr("transform", "translate(" + w / 2 + "," + h / 2  + ")");
+
+                svg.append("circle")
+                .attr("r", r0 + 20);
+
+                var rdr = chordRdr(matrix, mmap);
+                chord.matrix(matrix);
+
+                var g = svg.selectAll("g.group")
+                .data(chord.groups())
+                .enter().append("svg:g")
+                .attr("class", "group")
+                .on("mouseover", mouseover)
+                .on("mouseout", function (d) { d3.select("#tooltipProcedencia").style("visibility", "hidden") });
+
+                g.append("svg:path")
+                .style("stroke", "grey")
+                .style("fill", function(d) { return rdr(d).gdata; })
+                .attr("d", arc);
+
+                g.append("svg:text")
+                .each(function(d) { rdr(d).gname == "Castilla y León" ?  d.angle = ((d.startAngle + d.endAngle) / 2) - 0.15 : d.angle = (d.startAngle + d.endAngle) / 2; })
+                .attr("dy", ".35em")
+                .style("color", "#d4d4d4")
+                .attr("text-anchor", function(d) { return d.angle > Math.PI ? "end" : null; })
+                .attr("transform", function(d) {
+                    return "rotate(" + (d.angle * 180 / Math.PI - 90) + ")"
+                    + "translate(" + (r0 + 25) + ")"
+                    + (d.angle > Math.PI ? "rotate(180)" : "");
+                })
+                .text(function(d) { return rdr(d).gname; });
+
+                var chordPaths = svg.selectAll("path.chord")
+                .data(chord.chords())
+                .enter().append("svg:path")
+                .attr("class", "chord")
+                .style("stroke", "grey")
+                .style("fill", function(d) { return _.where(mmap, {id: d.source.index })[0].data;; })
+                .attr("d", d3.svg.chord().radius(r0))
+                .on("mouseover", function (d) {
+                    d3.select("#tooltipProcedencia")
+                    .style("visibility", "visible")
+                    .html(chordTip(rdr(d)))
+                    .style("top", function () { return (d3.event.pageY - 100)+"px"})
+                    .style("left", function () { return (d3.event.pageX - 100)+"px";})
+                })
+                .on("mouseout", function (d) { d3.select("#tooltipProcedencia").style("visibility", "hidden") });
+
+                function chordTip (d) {
+                    var p = d3.format(",");
+                    return "Nacidos en...<br/>"
+                    + d.sname + " empadronados en " + d.tname
+                    + ": " + p(d.svalue) + "<br/>"
+                    + d.tname + " empadronados en " + d.sname
+                    + ": " + p(d.tvalue) + "<br/>";
+                }
+
+                function groupTip (d) {
+                    var p = d3.format(",") ;
+                    return "Personas que han salido de<br/>"  + d.gname + ": " + p(d3.round(d.gvalue)) + "<br/>";
+                }
+
+                function mouseover(d, i) {
+                    d3.select("#tooltipProcedencia")
+                    .style("visibility", "visible")
+                    .html(groupTip(rdr(d)))
+                    .style("top", function () { return (d3.event.pageY - 80)+"px"})
+                    .style("left", function () { return (d3.event.pageX - 130)+"px";})
+
+                    chordPaths.classed("fade", function(p) {
+                        return p.source.index != i
+                        && p.target.index != i;
+                    });
+                }
+
+            }
+
+            function switchText(){
+
+                $('#helpText1').toggle();
+                $('#helpText2').toggle();
+                $('#previous').toggle();
+                $('#next').toggle();
+
+            }
+
+        </script>          
+    </head>
+
+    <body>
+        <div id="container">
+            <script type="text/javascript">
+                var height = window.screen.availHeight;
+                var width = window.screen.availWidth;
+                $('#container').attr("height",height);
+                $('#container').attr("width",width); 
+            </script>
+            <center><h1 id="title">¿A qué lugar de España se marchó tu gente?</h1></center>
+            <div id="tooltipProcedencia"></div>
+            <div id="graphic"></div>
+            <div id="helpZone">
+                <span style="width:100%">
+                    <textarea readonly="readonly" unselectable="on" id="helpText1" class="helpText" rows="20" cols="40">Parece una maraña de hilos del telar de un fabricante de atrapasueños a primera vista, pero representa cuántas personas dejaron la Comunidad Autónoma donde  nacieron para residir en otra, según el padrón del INE a 1 de enero de 2014.&#13;&#10;&#13;&#10;Andaluces que viven en Cataluña, madrileños en Canarias o navarros en Galicia. La  circunferencia muestra los que se fueron: así, Andalucía está a la cabeza con casi 1.449.000 personas registradas en otras Comunidades. Las 18 líneas que salen de cada región representan de mayor a menor las personas que se mudaron a cada Comunidad. Por ejemplo, castellanoleoneses en Madrid hay más de 400.000, y unos  60.000 madrileños en Castilla y León: el mayor número colorea la línea, en este caso amarilla.</textarea>
+                    <textarea readonly="readonly" unselectable="on" id="helpText2" class="helpText" style="display:none" rows="20" cols="40">La mayor comunidad desplazada a una misma Comunidad es la andaluza, con más de 618.000 personas asentadas en Cataluña, teniendo en cuenta que Andalucía es la  Comunidad con más habitantes de España. La menor son los 39 riojanos que viven en Ceuta. Además, el fenómeno de 'Ocho apellidos vascos' tampoco es tan inusual: casi 39.000 andaluces viven en el País Vasco, y más de 25.000 vascos cambiaron el norte por el sur.&#13;&#10;&#13;&#10;Se observan otros movimientos, como que Extremadura pierde casi siempre en el intercambio: hay más extremeños viviendo en todas las demás Comunidades que gente de esos lugares viviendo en Extremadura (excepto Melilla, que cambió 336 melillenses por 270 extremeños). Lo mismo ocurre, además, entre los castellanoleoneses.</textarea></span>
+                <span style="width:100%">
+                    <center>
+                        <img id="previous" class="button" style="display:none;" onclick="switchText();" src="img/flechaPrevious.png" />
+                        <img id="next" class="button" onclick="switchText();" src="img/flechaNext.png"/>
+                    </center>
+                </span>
+            </div>
+        </div>
+    </body>
+</html>
